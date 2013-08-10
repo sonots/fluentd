@@ -15,7 +15,8 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 #
-module Fluent
+module Fluentd
+module Plugin
 
 
 class ExecOutput < TimeSlicedOutput
@@ -86,6 +87,6 @@ class ExecOutput < TimeSlicedOutput
   end
 end
 
-
+end
 end
 

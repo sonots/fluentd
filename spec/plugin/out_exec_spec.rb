@@ -1,9 +1,12 @@
-require 'fluent/test'
+require 'fluentd/plugin_spec_helper'
+require 'fluentd/plugin/out_exec'
 require 'fileutils'
+require 'time'
 
-class ExecOutputTest < Test::Unit::TestCase
+include Fluentd::PluginSpecHelper
+
+describe Fluentd::Plugin::ExecOutput do
   def setup
-    Fluent::Test.setup
     FileUtils.rm_rf(TMP_DIR)
     FileUtils.mkdir_p(TMP_DIR)
   end
@@ -11,59 +14,62 @@ class ExecOutputTest < Test::Unit::TestCase
   TMP_DIR = File.dirname(__FILE__) + "/../tmp"
 
   CONFIG = %[
-    buffer_path #{TMP_DIR}/buffer
-    command cat >#{TMP_DIR}/out
-    keys time,tag,k1
+    buffer_path "#{TMP_DIR}/buffer"
+    command "cat >#{TMP_DIR}/out"
+    keys "time,tag,k1"
     tag_key tag
     time_key time
-    time_format %Y-%m-%d %H:%M:%S
-    localtime
+    time_format "%Y-%m-%d %H:%M:%S"
   ]
 
   def create_driver(conf = CONFIG)
-    Fluent::Test::BufferedOutputTestDriver.new(Fluent::ExecOutput).configure(conf)
+    generate_driver(Fluentd::Plugin::ExecOutput, conf)
   end
 
-  def test_configure
+  it 'test configure' do
     d = create_driver
 
-    assert_equal ["time","tag","k1"], d.instance.keys
-    assert_equal "tag", d.instance.tag_key
-    assert_equal "time", d.instance.time_key
-    assert_equal "%Y-%m-%d %H:%M:%S", d.instance.time_format
-    assert_equal true, d.instance.localtime
+    expect(d.instance.keys).to eql(["time","tag","k1"])
+    expect(d.instance.tag_key).to eql("tag")
+    expect(d.instance.time_key).to eql("time")
+    expect(d.instance.time_format).to eql("%Y-%m-%d %H:%M:%S")
   end
 
   def test_format
     d = create_driver
 
     time = Time.parse("2011-01-02 13:14:15").to_i
-    d.emit({"k1"=>"v1","kx"=>"vx"}, time)
-    d.emit({"k1"=>"v2","kx"=>"vx"}, time)
+    d.with('test', time) do |d|
+      d.pitch({"k1"=>"v1","kx"=>"vx"})
+      d.pitch({"k1"=>"v2","kx"=>"vx"})
+    end
 
+=begin
     d.expect_format %[2011-01-02 13:14:15\ttest\tv1\n]
     d.expect_format %[2011-01-02 13:14:15\ttest\tv2\n]
 
     d.run
+=end
   end
 
-  def test_write
+  it 'test write' do
     d = create_driver
 
     time = Time.parse("2011-01-02 13:14:15").to_i
-    d.emit({"k1"=>"v1","kx"=>"vx"}, time)
-    d.emit({"k1"=>"v2","kx"=>"vx"}, time)
+    d.with('test', time) do |d|
+      d.pitch({"k1"=>"v1","kx"=>"vx"})
+      d.pitch({"k1"=>"v2","kx"=>"vx"})
+    end
 
-    d.run
+    d.instance.send(:try_flush)
 
     expect_path = "#{TMP_DIR}/out"
-    assert_equal true, File.exist?(expect_path)
+    expect(File.exist?(expect_path)).to be_true
 
     data = File.read(expect_path)
     expect_data =
       %[2011-01-02 13:14:15\ttest\tv1\n] +
       %[2011-01-02 13:14:15\ttest\tv2\n]
-    assert_equal expect_data, data
+    expect(data).to eql(expect_data)
   end
 end
-
