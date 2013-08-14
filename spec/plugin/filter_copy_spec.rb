@@ -10,14 +10,12 @@ describe Fluentd::Plugin::CopyFilter do
   driver = generate_driver(Fluentd::Plugin::CopyFilter, config)
 
   it 'copy events' do
-    driver.run do |d|
-      t = Time.now.to_i
-      d.with('xxx', t) do |d|
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-      end
+    t = Time.now.to_i
+    driver.run('xxx', t) do |d|
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
     end
 
     expect(driver.events.keys.size).to eql(1)

@@ -58,15 +58,10 @@ module Fluentd
         end
       end
 
-      def with(tag, time=Time.now.to_i)
-        raise ArgumentError unless block_given?
-        yield BatchPitcher.new(self, tag, time)
-      end
-
-      def run
+      def run(tag=nil, time=Time.now.to_i)
         raise ArgumentError unless block_given?
         @instance.start
-        yield self
+        tag ? yield(BatchPitcher.new(self, tag, time)) : yield(self)
         @instance.stop
       end
 

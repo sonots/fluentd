@@ -11,14 +11,18 @@ describe Fluentd::Plugin::RetagFilter do
   driver = generate_driver(Fluentd::Plugin::RetagFilter, config)
 
   it 'copy events' do
+    t = Time.now.to_i
     driver.run do |d|
-      t = Time.now.to_i
-      d.with('xxx', t) do |d|
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-        d.pitch({"f1"=>"data1", "f2"=>"data2"})
-      end
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+    end
+    driver.run('xxx', t) do |d|
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
+      d.pitch({"f1"=>"data1", "f2"=>"data2"})
     end
 
     expect(driver.events.keys.size).to eql(1)
