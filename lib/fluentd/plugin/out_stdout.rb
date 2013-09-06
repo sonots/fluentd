@@ -28,6 +28,8 @@ module Fluentd
         :hash => Proc.new {|record| record.to_s },
       }
 
+      config_param :try_hash, :hash, :default => {foo: 'bar'}
+      config_param :try_any, :any, :default => ['foo','bar']
       config_param :output_type, :default => :json do |val|
         case val.downcase
         when 'json'
@@ -40,6 +42,8 @@ module Fluentd
       end
       def configure(conf)
         super
+        $stdout.write "out_stdout: #{@try_hash}\n"
+        $stdout.write "out_stdout: #{@try_any}\n"
         @output_proc = OUTPUT_PROCS[@output_type]
       end
 
