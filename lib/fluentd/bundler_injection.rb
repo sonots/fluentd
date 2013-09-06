@@ -29,8 +29,9 @@ module Fluentd
       ENV['BUNDLE_GEMFILE'] = gemfile_path
 
       require 'bundler'
+      require 'thor'
 
-      Bundler.ui = Bundler::UI::Shell.new(UIShell.new)
+      Bundler.ui = Bundler::UI::Shell.new #(UIShell.new)
       #Bundler.ui.debug!
       Bundler.rubygems.ui = Bundler::UI::RGProxy.new(Bundler.ui)
 
