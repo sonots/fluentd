@@ -39,6 +39,10 @@ module Fluentd
     attr_accessor :tag
     attr_accessor :time_format
 
+    def path=(path)
+      @dl.path = path
+    end
+
     extend Forwardable
 
     def_delegators :@dl, :hook_stdout!, :hook_stderr!, :reopen!, :reopen, :close, :<<
