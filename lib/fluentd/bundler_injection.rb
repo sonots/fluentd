@@ -29,10 +29,14 @@ module Fluentd
       ENV['BUNDLE_GEMFILE'] = gemfile_path
 
       require 'bundler'
-      require 'thor'
 
-      Bundler.ui = Bundler::UI::Shell.new #(UIShell.new)
-      #Bundler.ui.debug!
+      if Bundler::VERSION < "1.3.0"
+        Bundler.ui = Bundler::UI::Shell.new(UIShell.new)
+        #Bundler.ui.debug!
+      else
+        require 'bundler/vendored_thor' unless defined?(Thor)
+        Bundler.ui = Bundler::UI::Shell.new
+      end
       Bundler.rubygems.ui = Bundler::UI::RGProxy.new(Bundler.ui)
 
       if install_path = opts[:install_path]

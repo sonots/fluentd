@@ -23,6 +23,10 @@ module Fluentd
         $stdout.write "out_try: hash #{@try_hash}\n"
         $stdout.write "out_try: any #{@try_any}\n"
       end
+
+      def emit(tag, time, record)
+        $stdout.write "#{Time.at(time).localtime} #{tag}: #{record}\n"
+      end
     end
 
   end

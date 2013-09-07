@@ -1,0 +1,35 @@
+GIT
+  remote: https://github.com/sonots/fluent-plugin-grep
+  revision: 066f264054acc34bfe1f40c461d92c8e4d96f370
+  branch: v11
+  specs:
+    fluentd-plugin-grep (0.0.4)
+      fluentd (~> 0.11.0)
+
+PATH
+  remote: .
+  specs:
+    fluentd (0.11.0)
+      cool.io (~> 1.2.0)
+      http_parser.rb (~> 0.5.1)
+      msgpack (~> 0.5.5)
+      serverengine (~> 1.5.3)
+      yajl-ruby (~> 1.1)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    cool.io (1.2.0)
+    http_parser.rb (0.5.3)
+    msgpack (0.5.5)
+    serverengine (1.5.3)
+      sigdump (~> 0.2.2)
+    sigdump (0.2.2)
+    yajl-ruby (1.1.0)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  fluentd!
+  fluentd-plugin-grep!
