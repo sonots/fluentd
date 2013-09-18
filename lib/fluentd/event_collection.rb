@@ -50,6 +50,10 @@ module Fluentd
       @record = record
     end
 
+    def dup
+      SingleEventCollection.new(@time, @record.dup)
+    end
+
     def destructive_repeatable?
       true
     end
@@ -69,6 +73,14 @@ module Fluentd
     def initialize
       @time_array = []
       @record_array = []
+    end
+
+    def dup
+      event_collection = MultiEventCollection.new
+      for i in 0..time_array.length-1
+        event_collection.add(@time_array[i], @record_array[i].dup)
+      end
+      event_collection
     end
 
     def add(time, record)

@@ -23,16 +23,26 @@ module Fluentd
     class CopyFilter < Filter
       Plugin.register_filter('copy', self)
 
+      config_param :deep_copy, :bool, :default => false
+
       def configure(conf)
         super
       end
 
       def emit(tag, time, record)
-        collector.emit(tag, time, record)
+        if @deep_copy
+          collector.emit(tag, time, record)
+        else
+          collector.emit(tag, time, record.dup)
+        end
       end
 
       def emits(tag, es)
-        collector.emits(tag, es)
+        if @deep_copy
+          collector.emits(tag, es)
+        else
+          collector.emits(tag, es.dup)
+        end
       end
     end
 
