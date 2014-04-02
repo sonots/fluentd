@@ -31,9 +31,17 @@ module Fluent
     config_param :backlog, :integer, :default => nil
     # SO_LINGER 0 to send RST rather than FIN to avoid lots of connections sitting in TIME_WAIT at src
     config_param :linger_timeout, :integer, :default => 0
+    attr_reader :elapsed # for test
 
     def configure(conf)
       super
+
+      if element = conf.elements.first { |element| element.name == 'elapsed' }
+        tag = element["tag"] || 'elapsed'
+        interval = element["interval"].to_i || 60
+        hook = element['hook'] || 'on_message'
+        @elapsed = ElapsedMeasure.new(log, tag, interval, hook)
+      end
     end
 
     def start
@@ -49,6 +57,7 @@ module Fluent
       @loop.attach(@hbr)
 
       @thread = Thread.new(&method(:run))
+      @elapsed.start if @elapsed
       @cached_unpacker = $use_msgpack_5 ? nil : MessagePack::Unpacker.new
     end
 
@@ -57,16 +66,101 @@ module Fluent
       @loop.stop
       @usock.close
       listen_address = (@bind == '0.0.0.0' ? '127.0.0.1' : @bind)
-      # This line is for connecting listen socket to stop the event loop.
-      # We should use more better approach, e.g. using pipe, fixing cool.io with timeout, etc.
-      TCPSocket.open(listen_address, @port) {|sock| } # FIXME @thread.join blocks without this line
+      begin
+        # This line is for connecting listen socket to stop the event loop.
+        # We should use more better approach, e.g. using pipe, fixing cool.io with timeout, etc.
+        SocketUtil.open_tcp_socket(listen_address, @port) {|sock| }  # FIXME @thread.join blocks without this line
+      rescue Timeout::Error => e
+        $log.warn "opening tcp socket is timeout on #{listen_address}:#{@port}"
+      end
       @thread.join
       @lsock.close
+      @elapsed.stop if @elapsed
+    end
+
+    class ElapsedMeasure
+      attr_reader :tag, :interval, :hook, :times, :sizes, :mutex, :thread, :log
+      def initialize(log, tag, interval, hook)
+        @log = log
+        @tag = tag
+        @interval = interval
+        @hook = hook.split(',')
+        @times = []
+        @sizes = []
+        @mutex = Mutex.new
+      end
+
+      def add(time, size)
+        @times << time
+        @sizes << size
+      end
+
+      def clear
+        @times.clear
+        @sizes.clear
+      end
+
+      def hookable?(caller)
+        @hook.include?(caller.to_s)
+      end
+
+      def measure_time(caller, size)
+        if hookable?(caller)
+          started = Time.now
+          yield
+          elapsed = (Time.now - started).to_f
+          log.info "in_forward: elapsed time at #{caller} is #{elapsed} sec for #{size} bytes"
+          @mutex.synchronize { self.add(elapsed, size) }
+        else
+          yield
+        end
+      end
+
+      def start
+        @thread = Thread.new(&method(:run))
+      end
+
+      def stop
+        @thread.terminate
+        @thread.join
+      end
+
+      def run
+        @last_checked ||= Engine.now
+        while (sleep 0.5)
+          begin
+            now = Engine.now
+            if now - @last_checked >= @interval
+              flush(now)
+              @last_checked = now
+            end
+          rescue => e
+            log.warn "in_forward: #{e.class} #{e.message} #{e.backtrace.first}"
+          end
+        end
+      end
+
+      def flush(now)
+        times, sizes = [], []
+        @mutex.synchronize do
+          times = @times.dup
+          sizes = @sizes.dup
+          self.clear
+        end
+        if !times.empty? and !sizes.empty?
+          num = times.size
+          max = num == 0 ? 0 : times.max
+          avg = num == 0 ? 0 : times.map(&:to_f).inject(:+) / num.to_f
+          size_max = num == 0 ? 0 : sizes.max
+          size_avg = num == 0 ? 0 : sizes.map(&:to_f).inject(:+) / num.to_f
+          Engine.emit(@tag, now, {:num => num, :max => max, :avg => avg, :size_max => size_max, :size_avg => size_avg})
+        end
+      end
     end
 
     def listen
       log.info "listening fluent socket on #{@bind}:#{@port}"
-      s = Coolio::TCPServer.new(@bind, @port, Handler, @linger_timeout, log, method(:on_message))
+      s = Coolio::TCPServer.new(@bind, @port, Handler, @linger_timeout, log, method(:on_message), @elapsed)
       s.listen(@backlog) unless @backlog.nil?
       s
     end
@@ -121,8 +215,11 @@ module Fluent
 
       if entries.class == String
         # PackedForward
-        es = MessagePackEventStream.new(entries, @cached_unpacker)
-        Engine.emit_stream(tag, es)
+        bytesize = tag.bytesize + entries.bytesize
+        measure_time(:on_message, bytesize) do
+          es = MessagePackEventStream.new(entries, @cached_unpacker)
+          Engine.emit_stream(tag, es)
+        end
 
       elsif entries.class == Array
         # Forward
@@ -134,7 +231,9 @@ module Fluent
           time = (now ||= Engine.now) if time == 0
           es.add(time, record)
         }
-        Engine.emit_stream(tag, es)
+        measure_time(:on_message, 0) do
+          Engine.emit_stream(tag, es)
+        end
 
       else
         # Message
@@ -142,12 +241,19 @@ module Fluent
         return if record.nil?
         time = msg[1]
         time = Engine.now if time == 0
-        Engine.emit(tag, time, record)
+        bytesize = time.size + record.to_s.bytesize
+        measure_time(:on_message, bytesize) do
+          Engine.emit(tag, time, record)
+        end
       end
     end
 
+    def measure_time(caller, size)
+      @elapsed ? @elapsed.measure_time(caller, size) { yield } : yield
+    end
+
     class Handler < Coolio::Socket
-      def initialize(io, linger_timeout, log, on_message)
+      def initialize(io, linger_timeout, log, on_message, elapsed)
         super(io)
         if io.is_a?(TCPSocket)
           opt = [1, linger_timeout].pack('I!I!')  # { int l_onoff; int l_linger; }
@@ -159,6 +265,7 @@ module Fluent
           remote_port, remote_addr = *Socket.unpack_sockaddr_in(@_io.getpeername) rescue nil
           "accepted fluent socket from '#{remote_addr}:#{remote_port}': object_id=#{self.object_id}"
         }
+        @elapsed = elapsed
       end
 
       def on_connect
@@ -181,8 +288,14 @@ module Fluent
         m.call(data)
       end
 
+      def measure_time(caller, size)
+        @elapsed ? @elapsed.measure_time(caller, size) { yield } : yield
+      end
+
       def on_read_json(data)
-        @y << data
+        measure_time(:on_read, data.bytesize) do
+          @y << data
+        end
       rescue => e
         @log.error "forward error", :error => e, :error_class => e.class
         @log.error_backtrace
@@ -190,7 +303,9 @@ module Fluent
       end
 
       def on_read_msgpack(data)
-        @u.feed_each(data, &@on_message)
+        measure_time(:on_read, data.bytesize) do
+          @u.feed_each(data, &@on_message)
+        end
       rescue => e
         @log.error "forward error", :error => e, :error_class => e.class
         @log.error_backtrace
