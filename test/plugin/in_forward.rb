@@ -20,6 +20,15 @@ class ForwardInputTest < Test::Unit::TestCase
     d = create_driver
     assert_equal PORT, d.instance.port
     assert_equal '127.0.0.1', d.instance.bind
+
+    d = create_driver(CONFIG + %[
+      <elapsed>
+        tag elapsed
+        interval 60
+      </elapsed>
+    ])
+    assert_equal 'elapsed', d.instance.elapsed.tag
+    assert_equal 60, d.instance.elapsed.interval
   end
 
   def connect
@@ -108,6 +117,25 @@ class ForwardInputTest < Test::Unit::TestCase
         send_data [tag, time, record].to_json
       }
       sleep 0.5
+    end
+  end
+
+  # ToDo
+  def test_elapsed
+    d = create_driver(CONFIG + %[
+      <elapsed>
+        tag elapsed
+        interval 1
+      </elapsed>
+    ])
+
+    time = Time.parse("2011-01-02 13:14:15 UTC").to_i
+    Fluent::Engine.now = time
+
+    d.run do
+      send_data ['tag1', 0, {'a'=>1}].to_msgpack
+      sleep 0.5
+      d.instance.elapsed.flush(time)
     end
   end
 
