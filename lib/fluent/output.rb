@@ -179,6 +179,7 @@ module Fluent
     config_param :max_retry_wait, :time, :default => nil
     config_param :num_threads, :integer, :default => 1
     config_param :queued_chunk_flush_interval, :time, :default => 1
+    config_param :queued_chunk_flush_num, :integer, :default => 1
 
     def configure(conf)
       super
@@ -304,10 +305,17 @@ module Fluent
           end
         end
 
+        flush_num = 0
         if @secondary && @error_history.size > @retry_limit
-          has_next = flush_secondary(@secondary)
+          while (has_next = flush_secondary(@secondary))
+            flush_num += 1
+            break if flush_num >= @queued_chunk_flush_num
+          end
         else
-          has_next = @buffer.pop(self)
+          while (has_next = @buffer.pop(self))
+            flush_num += 1
+            break if flush_num >= @queued_chunk_flush_num
+          end
         end
 
         # success
