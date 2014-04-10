@@ -31,7 +31,7 @@ module Fluent
     config_param :backlog, :integer, :default => nil
     # SO_LINGER 0 to send RST rather than FIN to avoid lots of connections sitting in TIME_WAIT at src
     config_param :linger_timeout, :integer, :default => 0
-    config_param :read_interval, :time, :default => 0.5
+    config_param :read_interval, :time, :default => 0.1
 
     def configure(conf)
       super
