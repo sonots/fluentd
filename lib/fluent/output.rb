@@ -85,7 +85,7 @@ module Fluent
     end
   end
 
-
+  # num_threads で output プラグインの並列数を増やすために利用
   class OutputThread
     def initialize(output)
       @output = output
@@ -158,7 +158,59 @@ module Fluent
     end
   end
 
-
+  ## 構造
+  #
+  # +-------------------+       1.* +---------------+
+  # |  BufferedOutput   | --------> | OutputThread  |
+  # +-------------------+           +---------------+
+  # | - writers         |
+  # | - buffer          |         1 +---------------+
+  # +-------------------+ --------> | MemoryBuffer  |
+  # +-------------------+           +---------------+
+  #      △                                  ｜
+  #      ｜                                 ▽
+  # +------------------------+      +---------------+
+  # |  ObjectBufferedOutput  |      | BasicBuffer   |
+  # +------------------------+      +---------------+
+  #      △
+  #      ｜
+  # +-----------------+
+  # |  ForwardOutput  |
+  # +-----------------+
+  
+  ## データ送信の流れ
+  # 
+  # Input プラグインのスレッドから。データ入力があった場合。
+  # 
+  # +--------+     +----------------+     +-------------+
+  # | Input  |     | BufferedOutput |     | BasicBuffer |
+  # +----+---+     +--------+-------+     +------+------+
+  #      |                  |                    |
+  #      |  emit(tag, es)   |                    |
+  #      | -------------->  |   emit(tag, data)  |
+  #      |                  | -----------------> |
+  #      |                  |                    | top (chunk) << data
+  #      |                  |                    |   or
+  #      |                  |                    | @queue << top (chunk)
+  #
+  # OutputThread のスレッド。時間がたったら呼び出される。
+  # 
+  # +---------------+  +-----------------+  +--------------+
+  # | OutputThread  |  | BufferedOutput  |  | BasicBuffer  |
+  # +------+--------+  +--------+--------+  +------+-------+
+  #        |                    |                  |
+  #        |     try_flush      |                  |
+  #        | -----------------> |     (push)       |
+  #        |                    | ---------------> |
+  #        |                    |                  | @queue << top (chunk)
+  #        |                    |      pop         |
+  #        |                    | ---------------> |
+  #        |                    |                  |
+  #        |                    |   write(chunk)   |
+  #        |                    | <--------------- |
+  #        |                    |                  |
+  #        |                    |   do something   |
+  #        |                    | ------------------------>
   class BufferedOutput < Output
     def initialize
       super
@@ -184,6 +236,7 @@ module Fluent
     def configure(conf)
       super
 
+      # Buffer Plugin のインスタンスが作られる (MemoryBuffer, FileBuffer)
       @buffer = Plugin.new_buffer(@buffer_type)
       @buffer.configure(conf)
 
@@ -195,6 +248,7 @@ module Fluent
         end
       end
 
+      # OutputThread のインスタンスが num_threads 数分作られる
       @writers = (1..@num_threads).map {
         writer = OutputThread.new(self)
         writer.configure(conf)
@@ -224,7 +278,7 @@ module Fluent
       @next_flush_time = Engine.now + @flush_interval
       @buffer.start
       @secondary.start if @secondary
-      @writers.each {|writer| writer.start }
+      @writers.each {|writer| writer.start } # OutputThread のスレッドを起動 (num_threads 分)
       @writer_current_position = 0
       @writers_size = @writers.size
     end
@@ -238,7 +292,7 @@ module Fluent
     def emit(tag, es, chain, key="")
       @emit_count += 1
       data = format_stream(tag, es)
-      if @buffer.emit(key, data, chain)
+      if @buffer.emit(key, data, chain) # BasicBuffer#emit
         submit_flush
       end
     end
@@ -269,13 +323,31 @@ module Fluent
       }
     end
 
+    # +---------------+  +-----------------+  +--------------+
+    # | OutputThread  |  | BufferedOutput  |  | BasicBuffer  |
+    # +------+--------+  +--------+--------+  +------+-------+
+    #        |                    |                  |
+    #        |     try_flush      |                  |
+    #        | -----------------> |     (push)       |
+    #        |                    | ---------------> |
+    #        |                    |                  | @queue << top (chunk)
+    #        |                    |      pop         |
+    #        |                    | ---------------> |
+    #        |                    |                  |
+    #        |                    |      write       |
+    #        |                    | <--------------- |
+    #        |                    |                  |
+    #        |                    |   do something   |
+    #        |                    | ------------------------>
     def try_flush
       time = Engine.now
 
+      # queue にデータがあるかをチェック
       empty = @buffer.queue_size == 0
       if empty && @next_flush_time < (now = Engine.now)
         @buffer.synchronize do
           if @next_flush_time < now
+            # buffer_chunk_limit に達していなくても flush_interval が来たら enqueue する
             enqueue_buffer
             @next_flush_time = now + @flush_interval
             empty = @buffer.queue_size == 0
@@ -283,6 +355,7 @@ module Fluent
         end
       end
       if empty
+        # queue が空だったらすぐに return
         return time + @try_flush_interval
       end
 
@@ -308,6 +381,8 @@ module Fluent
         if @secondary && !@disable_retry_limit && @num_errors > @retry_limit
           has_next = flush_secondary(@secondary)
         else
+           # queue にデータがあった場合
+           # queue からpop して output#write
           has_next = @buffer.pop(self)
         end
 
@@ -320,8 +395,10 @@ module Fluent
         end
 
         if has_next
+          # queue にまだデータが入っている場合
           return Engine.now + @queued_chunk_flush_interval
         else
+          # queue にもうデータが入っていない場
           return time + @try_flush_interval
         end
 
@@ -413,7 +490,6 @@ module Fluent
       @buffer.pop(secondary)
     end
   end
-
 
   class ObjectBufferedOutput < BufferedOutput
     def initialize

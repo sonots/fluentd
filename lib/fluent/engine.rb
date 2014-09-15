@@ -97,6 +97,11 @@ module Fluent
       if @without_source
         $log.info "'--without-source' is applied. Ignore <source> sections"
       else
+        # <source>
+        #   type forward
+        #   port 24224
+        #   bind 0.0.0.0
+        # </source>
         conf.elements.select {|e|
           e.name == 'source'
         }.each {|e|
@@ -108,11 +113,16 @@ module Fluent
 
           input = Plugin.new_input(type)
           input.configure(e)
+          # See Fluent::Input for Plugin structure
+          # See Fluent::TailInput as an example
 
           @sources << input
         }
       end
 
+      # <match tag.**>
+      #   type grep
+      # </match>
       conf.elements.select {|e|
         e.name == 'match'
       }.each {|e|
@@ -126,8 +136,11 @@ module Fluent
         output = Plugin.new_output(type)
         output.configure(e)
 
+        # tag pattern と output インスタンスの組
         match = Match.new(pattern, output)
         @matches << match
+
+        # Back: Fluent::Supervisor#start
       }
     end
 
@@ -148,6 +161,14 @@ module Fluent
     def emit_stream(tag, es)
       target = @match_cache[tag]
       unless target
+        # return the first matched output plugin
+        # <match tag1.**>
+        #   type stdout
+        # </match>
+        #
+        # <match tag2.**>
+        #   type null
+        # </match>
         target = match(tag) || NoMatchMatch.new
         # this is not thread-safe but inconsistency doesn't
         # cause serious problems while locking causes.
@@ -158,6 +179,8 @@ module Fluent
         @match_cache_keys << tag
       end
       target.emit(tag, es)
+      # See Fluent::StdoutOutput as an example
+      # Next: BufferedOutput
     rescue => e
       if @suppress_emit_error_log_interval == 0 || now > @next_emit_error_log_time
         $log.warn "emit transaction failed ", :error_class=>e.class, :error=>e
@@ -171,6 +194,9 @@ module Fluent
     end
 
     def match(tag)
+      # <match tag.**>
+      #   type stdout
+      # </match>
       @matches.find {|m| m.match(tag) }
     end
 
@@ -212,6 +238,7 @@ module Fluent
       begin
         start
 
+        # internal fluent. tag
         if match?($log.tag)
           $log.enable_event
           @log_emit_thread = Thread.new(&method(:log_event_loop))
@@ -222,7 +249,7 @@ module Fluent
           @default_loop = Coolio::Loop.default
           @default_loop.attach Coolio::TimerWatcher.new(1, true)
           # TODO attach async watch for thread pool
-          @default_loop.run
+          @default_loop.run # infinite loop
         end
 
         if @engine_stopped and @default_loop
@@ -230,12 +257,15 @@ module Fluent
           @default_loop = nil
         end
 
+        # Next: Fluent::ForwardInput => Fluent::StdoutOutput
       rescue => e
         $log.error "unexpected error", :error_class=>e.class, :error=>e
         $log.error_backtrace
       ensure
+        # See Fluent::Supervisor#install_main_process_signal_handlers for stop
         $log.info "shutting down fluentd"
         shutdown
+        # Next: Fluent::ForwardInput => Fluent::StdoutOutput
         if @log_emit_thread
           @log_event_loop_stop = true
           @log_emit_thread.join
@@ -259,10 +289,14 @@ module Fluent
 
     private
     def start
+      # Fluent::Output
+      # Fluent::StdoutOutput
       @matches.each {|m|
         m.start
         @started_matches << m
       }
+      # Fluent::Input
+      # Fluent::TailInput for an example
       @sources.each {|s|
         s.start
         @started_sources << s
@@ -275,6 +309,8 @@ module Fluent
         Thread.new do
           begin
             s.shutdown
+            # See Fluent::ForwardInput as an example
+            # See CodeReadingBootstrap for summary
           rescue => e
             $log.warn "unexpected error while shutting down", :plugin => s.class, :plugin_id => s.plugin_id, :error_class => e.class, :error => e
             $log.warn_backtrace

@@ -77,9 +77,9 @@ module Fluent
       if klass = map[type]
         return klass.new
       end
-      try_load_plugin(name, type)
+      try_load_plugin(name, type) # require
       if klass = map[type]
-        return klass.new
+        return klass.new # new
       end
       raise ConfigError, "Unknown #{name} plugin '#{type}'. Run 'gem search -rd fluent-plugin' to find plugins"
     end

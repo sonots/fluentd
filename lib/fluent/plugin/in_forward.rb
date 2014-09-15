@@ -44,7 +44,7 @@ module Fluent
     def start
       @loop = Coolio::Loop.new
 
-      @lsock = listen
+      @lsock = listen # register on_message callback fot tcp port listen
       @loop.attach(@lsock)
 
       @usock = SocketUtil.create_udp_socket(@bind)

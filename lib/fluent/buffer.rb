@@ -112,7 +112,6 @@ module Fluent
     end
   end
 
-
   class BasicBuffer < Buffer
     include MonitorMixin
 
@@ -168,6 +167,7 @@ module Fluent
       synchronize do
         top = (@map[key] ||= new_chunk(key))  # TODO generate unique chunk id
 
+        #  top chunk が buffer_chunk_limit を超えてなければ chunk に data を格納
         if storable?(top, data)
           chain.next
           top << data
@@ -192,16 +192,17 @@ module Fluent
         nc = new_chunk(key)  # TODO generate unique chunk id
         ok = false
 
+        # buffer_chunk_limit を超えた場合 (chunk がある程度大きくなったら)
         begin
-          nc << data
+          nc << data # 入らなかった分を next chunk に格納
           chain.next
 
           flush_trigger = false
           @queue.synchronize {
-            enqueue(top)
+            enqueue(top) # MemoryBuffer の場合は特になにもやっていない
             flush_trigger = @queue.empty?
-            @queue << top
-            @map[key] = nc
+            @queue << top # top chunk を queue に格納
+            @map[key] = nc # 次の top chunk を更新
           }
 
           ok = true
@@ -249,15 +250,17 @@ module Fluent
         end
 
         @queue.synchronize do
-          enqueue(top)
-          @queue << top
-          @map.delete(key)
+          enqueue(top) # MemoryBuffer では特になにもやっていない
+          @queue << top # top chunk を queue に積む
+          @map.delete(key) # chunk セットから top chunk を消す
         end
 
         return true
       end  # synchronize
     end
 
+    # pop というメソッド名だが、pop するだけではなく、write (送信)もしている。
+    # write 成功した場合のみ、取り除くため
     def pop(out)
       chunk = nil
       @queue.synchronize do
@@ -273,7 +276,9 @@ module Fluent
 
       begin
         if !chunk.empty?
-          write_chunk(chunk, out)
+          write_chunk(chunk, out) # out.write(chunk) を呼び出す
+          # Fluent::ObjectBufferedOutput#write
+          # Fluent::ForwardOutput#write_objects
         end
 
         empty = false

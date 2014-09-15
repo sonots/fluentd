@@ -25,6 +25,11 @@ module Fluent
       super
     end
 
+    # <source>
+    #   type forward
+    #   port 24224
+    #   bind 0.0.0.0
+    # </source>
     def configure(conf)
       super
     end

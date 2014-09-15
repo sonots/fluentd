@@ -130,9 +130,9 @@ module Fluent
           change_privilege
           init_engine
           install_main_process_signal_handlers
-          run_configure
+          run_configure # parse conf, and read plugins
           finish_daemonize if @daemonize
-          run_engine
+          run_engine # starts plugin
           exit 0
         end
         $log.error "fluentd main process died unexpectedly. restarting." unless @finished
