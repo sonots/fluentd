@@ -53,6 +53,18 @@ module Fluent
         @path_prefix = @path[0,pos]
         @path_suffix = @path[pos+1..-1]
         conf['buffer_path'] ||= "#{@path}"
+      elsif @path =~ /%Y|%m|%d|%H|%M|%S/
+        @path_prefix = nil
+        @path_suffix = nil
+        conf['buffer_path'] ||= @path.gsub('%Y','yyyy').gsub('%m','mm').gsub('%d','dd').gsub('%H','HH').gsub('%M','MM').gsub('%S','SS')
+
+        if @path.index('%S')
+          conf['time_slice_format'] = '%Y%m%d%H%M%S'
+        elsif @path.index('%M')
+          conf['time_slice_format'] = '%Y%m%d%H%M'
+        elsif @path.index('%H')
+          conf['time_slice_format'] = '%Y%m%d%H'
+        end
       else
         @path_prefix = @path+"."
         @path_suffix = ".log"
@@ -105,16 +117,31 @@ module Fluent
         suffix = ".gz"
       end
 
-      if @append
-        "#{@path_prefix}#{chunk.key}#{@path_suffix}#{suffix}"
+      if @path_prefix and @path_suffix
+        if @append
+          "#{@path_prefix}#{chunk.key}#{@path_suffix}#{suffix}"
+        else
+          path = nil
+          i = 0
+          begin
+            path = "#{@path_prefix}#{chunk.key}_#{i}#{@path_suffix}#{suffix}"
+            i += 1
+          end while File.exist?(path)
+          path
+        end
       else
-        path = nil
-        i = 0
-        begin
-          path = "#{@path_prefix}#{chunk.key}_#{i}#{@path_suffix}#{suffix}"
-          i += 1
-        end while File.exist?(path)
-        path
+        if @append
+          Time.strptime(chunk.key, @time_slice_format).strftime(@path)
+        else
+          path_base = Time.strptime(chunk.key, @time_slice_format).strftime(@path)
+          path = "#{path_base}#{suffix}"
+          i = 0
+          begin
+            path = "#{path_base}.#{i}#{suffix}"
+            i += 1
+          end while File.exist?(path)
+          path
+        end
       end
     end
   end

@@ -293,6 +293,31 @@ class FileOutputTest < Test::Unit::TestCase
       path = d.run
       assert_equal "#{TMP_DIR}/out_file_test.2011-01-02-13.txt", path
     end
+
+    test 'strftime' do
+      d = create_driver(%[
+        path #{TMP_DIR}/out_file_test.%Y-%m-%d-%H.log
+        utc true
+      ])
+      assert_equal "%Y%m%d%H", d.instance.time_slice_format
+      time = Time.parse("2011-01-02 13:14:15 UTC").to_i
+      d.emit({"a"=>1}, time)
+      path = d.run
+      assert_equal "#{TMP_DIR}/out_file_test.2011-01-02-13.log.0", path
+    end
+
+    test 'strftime with append' do
+      d = create_driver(%[
+        path #{TMP_DIR}/out_file_test.%Y-%m-%d-%H.log
+        utc true
+        append true
+      ])
+      assert_equal "%Y%m%d%H", d.instance.time_slice_format
+      time = Time.parse("2011-01-02 13:14:15 UTC").to_i
+      d.emit({"a"=>1}, time)
+      path = d.run
+      assert_equal "#{TMP_DIR}/out_file_test.2011-01-02-13.log", path
+    end
   end
 end
 
