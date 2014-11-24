@@ -53,13 +53,19 @@ module Fluent
       def parse_literal(string_boundary_charset = LINE_END)
         spacing_without_comment
 
+        rewind_pos = self.pos
         value = if skip(/\[/)
                   scan_json(true)
                 elsif skip(/\{/)
                   scan_json(false)
                 else
-                  scan_string(string_boundary_charset)
+                  nil
                 end
+        unless value
+          self.pos = rewind_pos
+          value = scan_string(string_boundary_charset)
+        end
+
         value
       end
 
@@ -233,7 +239,8 @@ module Fluent
         end
 
         unless result
-          parse_error! "got incomplete JSON #{is_array ? 'array' : 'hash'} configuration"
+          # parse_error! "got incomplete JSON #{is_array ? 'array' : 'hash'} configuration"
+          return nil
         end
 
         JSON.dump(result)

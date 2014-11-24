@@ -33,6 +33,7 @@ module Fluent
         raise ConfigError, "stdout output output_type should be 'json' or 'hash'"
       end
     end
+    config_param :foo, :hash, :default => nil
 
     def configure(conf)
       super

@@ -60,6 +60,14 @@ module Fluent
         @ss.scan(pattern)
       end
 
+      def pos
+        @ss.pos
+      end
+
+      def pos=(pos)
+        @ss.pos = pos
+      end
+
       def getch
         @ss.getch
       end
