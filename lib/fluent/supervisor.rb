@@ -107,7 +107,7 @@ module Fluent
       @chgroup = opt[:chgroup]
       @chuser = opt[:chuser]
 
-      apply_system_config(opt)
+      # apply_system_config(opt)
 
       @log_level = opt[:log_level]
       @suppress_interval = opt[:suppress_interval]
