@@ -105,8 +105,6 @@ module Fluent
       @chgroup = opt[:chgroup]
       @chuser = opt[:chuser]
 
-      # apply_system_config(opt)
-
       @log_level = opt[:log_level]
       @suppress_interval = opt[:suppress_interval]
       @suppress_config_dump = opt[:suppress_config_dump]
@@ -127,6 +125,7 @@ module Fluent
         install_supervisor_signal_handlers
         until @finished
           supervise do
+            apply_system_config(opt = {})
             read_config
             change_privilege
             init_engine
@@ -141,6 +140,7 @@ module Fluent
       else
         $log.info "starting fluentd-#{Fluent::VERSION} without supervision"
         main_process do
+          apply_system_config(opt = {})
           read_config
           change_privilege
           init_engine
