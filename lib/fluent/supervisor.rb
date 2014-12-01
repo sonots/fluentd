@@ -380,13 +380,14 @@ module Fluent
       file = File.open(File::NULL)
       $log = Fluent::Log.new(file, Log::LEVEL_INFO)
       read_config
-      systems = Fluent::Config.parse(@config_data, @config_fname, @config_basedir, @use_v1_config).elements.select { |e|
-        e.name == 'system'
-      }
-      return if systems.empty?
-      raise ConfigError, "<system> is duplicated. <system> should be only one" if systems.size > 1
+      Fluent::Config.parse(@config_data, @config_fname, @config_basedir, @use_v1_config)
+      # systems = Fluent::Config.parse(@config_data, @config_fname, @config_basedir, @use_v1_config).elements.select { |e|
+      #   e.name == 'system'
+      # }
+      # return if systems.empty?
+      # raise ConfigError, "<system> is duplicated. <system> should be only one" if systems.size > 1
 
-      opt.merge!(SystemConfig.new(systems.first).to_opt)
+      # opt.merge!(SystemConfig.new(systems.first).to_opt)
     ensure
       file.close
     end
