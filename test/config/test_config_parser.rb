@@ -215,11 +215,14 @@ module Fluent::Config
             </nested2>
           </test>
         ]],
-        "accepts multiline json values" => [root(e("test", 'var', {'key'=>"[\"a\",\"b\",\"c\",\"d\"]"})), %[
+        "accepts one-line JSON Array values" => [root(e("test", 'var', {'key'=>"[\"a\",\"b\",\"c\",\"d\"]"})), %[
           <test var>
-            key ["a",
-"b", "c",
-"d"]
+            key ["a", "b", "c", "d"]
+          </test>
+        ]],
+        "accepts one-line JSON Hash values" => [root(e("test", 'var', {'key'=>"{\"a\":\"b\"}"})), %[
+          <test var>
+            key {"a":"b"}
           </test>
         ]],
         "parses empty element argument to nil" => [root(e("test", '')), %[
@@ -237,6 +240,28 @@ module Fluent::Config
       def test_parse_element(data)
         expected, target = data
         assert_text_parsed_as(expected, target)
+      end
+
+      data(
+        "rejects multiline JSON Array values" => %[
+          <test var>
+            key [
+              "a",
+              "b",
+              "c",
+              "d"
+            ]
+          </test>
+        ],
+        "rejects multiline JSON Hash values" => %[
+          <test var>
+            key {
+              "a":"b"
+            }
+          </test>
+        ])
+      def test_parse_element_error(data)
+        assert_parse_error(data)
       end
 
       [

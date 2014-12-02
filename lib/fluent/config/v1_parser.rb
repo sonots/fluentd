@@ -95,7 +95,7 @@ module Fluent
             elems << new_e
 
           elsif root_element && skip(/(\@include|include)#{SPACING}/)
-            if !prev_match.start_with?('@')
+            if prev_match and !prev_match.start_with?('@')
               $log.warn "'include' is deprecated. Use '@include' instead"
             end
             parse_include(attrs, elems)
@@ -103,7 +103,7 @@ module Fluent
           else
             k = scan_string(SPACING)
             spacing_without_comment
-            if prev_match.include?("\n") # support 'tag_mapped' like "without value" configuration
+            if prev_match and prev_match.include?("\n") # support 'tag_mapped' like "without value" configuration
               attrs[k] = ""
             else
               if k == '@include'
