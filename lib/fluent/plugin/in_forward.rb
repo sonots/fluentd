@@ -25,6 +25,7 @@ module Fluent
 
     config_param :port, :integer, :default => DEFAULT_LISTEN_PORT
     config_param :bind, :string, :default => '0.0.0.0'
+    config_param :fd, :integer, :default => nil # fd for tcp socket
     config_param :backlog, :integer, :default => nil
     # SO_LINGER 0 to send RST rather than FIN to avoid lots of connections sitting in TIME_WAIT at src
     config_param :linger_timeout, :integer, :default => 0
@@ -44,11 +45,13 @@ module Fluent
       @lsock = listen
       @loop.attach(@lsock)
 
-      @usock = SocketUtil.create_udp_socket(@bind)
-      @usock.bind(@bind, @port)
-      @usock.fcntl(Fcntl::F_SETFL, Fcntl::O_NONBLOCK)
-      @hbr = HeartbeatRequestHandler.new(@usock, method(:on_heartbeat_request))
-      @loop.attach(@hbr)
+      unless @fd
+        @usock = SocketUtil.create_udp_socket(@bind)
+        @usock.bind(@bind, @port)
+        @usock.fcntl(Fcntl::F_SETFL, Fcntl::O_NONBLOCK)
+        @hbr = HeartbeatRequestHandler.new(@usock, method(:on_heartbeat_request))
+        @loop.attach(@hbr)
+      end
 
       @thread = Thread.new(&method(:run))
     end
@@ -65,16 +68,28 @@ module Fluent
       # As a workaround, check if watchers are attached before detaching them.
       @loop.watchers.each {|w| w.detach if w.attached? }
       @loop.stop
-      @usock.close
+      @usock.close if @usock
       @thread.join
       @lsock.close
     end
 
     def listen
-      log.info "listening fluent socket on #{@bind}:#{@port}"
-      s = Coolio::TCPServer.new(@bind, @port, Handler, @linger_timeout, log, method(:on_message))
+      s = if @fd
+            sock = TCPServer.for_fd(@fd)
+            log.info "inherited addr=#{tcp_name(sock)} fd=#{@fd}"
+            Coolio::TCPServer.new(sock, nil, Handler, @linger_timeout, log, method(:on_message))
+          else
+            log.info "listening fluent socket on #{@bind}:#{@port}"
+            Coolio::TCPServer.new(@bind, @port, Handler, @linger_timeout, log, method(:on_message))
+          end
       s.listen(@backlog) unless @backlog.nil?
       s
+    end
+
+    # returns rfc2732-style (e.g. "[::1]:666") addresses for IPv6
+    def tcp_name(sock)
+      port, addr = Socket.unpack_sockaddr_in(sock.getsockname)
+      /:/ =~ addr ? "[#{addr}]:#{port}" : "#{addr}:#{port}"
     end
 
     #config_param :path, :string, :default => DEFAULT_SOCKET_PATH

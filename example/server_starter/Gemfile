@@ -1,0 +1,5 @@
+source "http://rubygems.org"
+
+gem 'fluentd', path: '../..'
+gem 'fluent-plugin-multiprocess', git: 'https://github.com/sonots/fluent-plugin-multiprocess', branch: 'keep_file_descriptors'
+gem 'server-starter'

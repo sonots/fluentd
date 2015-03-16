@@ -1,0 +1,11 @@
+#!/bin/sh
+bundle exec start_server.rb \
+  --port=0.0.0.0:24224 \
+  --dir=$(pwd) \
+  --signal-on-hup=HUP \
+  --signal-on-TERM=TERM \
+  --pid-file=$(pwd)/log/start_server.pid \
+  --status-file=$(pwd)/log/fluent.stat \
+  --backlog=1024 \
+  -- \
+  bundle exec --keep-file-descriptors fluentd -c fluent.conf 2>&1
