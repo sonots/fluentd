@@ -45,6 +45,8 @@ module Fluent
     config_param :phi_threshold, :integer, :default => 16
     config_param :phi_failure_detector, :bool, :default => true
     attr_reader :nodes
+    # This option is for Cool.io's loop wait timeout to avoid loop stuck at shutdown. Almost users don't need to change this value.
+    config_param :blocking_timeout, :time, :default => 0.5
 
     # backward compatibility
     config_param :port, :integer, :default => DEFAULT_LISTEN_PORT
@@ -123,10 +125,20 @@ module Fluent
     end
 
     def run
-      @loop.run
+      if @loop
+        if support_blocking_timeout?
+          @loop.run(@blocking_timeout)
+        else
+          @loop.run
+        end
+      end
     rescue
       log.error "unexpected error", :error=>$!.to_s
       log.error_backtrace
+    end
+
+    def support_blocking_timeout?
+      @loop.method(:run).arity.nonzero?
     end
 
     def write_objects(tag, chunk)
