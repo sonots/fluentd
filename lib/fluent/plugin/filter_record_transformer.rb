@@ -184,11 +184,47 @@ module Fluent
         Time.at(time).to_s
       end
 
+      # Preprocess record map to convert into internal expression
+      #
+      # @param [Hash|String|Array] value record map config
+      # @param [Boolean] force_stringify the value must be string, used for hash key
       def preprocess_map(value, force_stringify = false)
-        value
+        new_value = nil
+        if value.is_a?(String)
+          if @auto_typecast and !force_stringify
+            if single_placeholder_matched = value.match(/\A\${([^}]+)}\z/) # ${..} => ..
+              new_value = [:single, single_placeholder_matched[1]]
+            end
+          end
+          unless new_value
+            new_value = %Q{%Q[#{value.gsub(/\$\{([^}]+)\}/, '#{\1}')}]} # xx${..}xx => %Q[xx#{..}xx]
+          end
+        elsif value.is_a?(Hash)
+          new_value = {}
+          value.each_pair do |k, v|
+            new_value[preprocess_map(k, true)] = preprocess_map(v)
+          end
+        elsif value.is_a?(Array)
+          new_value = []
+          value.each_with_index do |v, i|
+            new_value[i] = preprocess_map(v)
+          end
+        else
+          new_value = value
+        end
+        new_value
       end
 
-      def prepare_placeholders(placeholder_values)
+      def prepare_es_placehodlers(placeholder_values)
+        @es_placeholders = _prepare_placeholders(placeholder_values)
+      end
+
+      def prepare_event_placehodlers(placeholder_values)
+        event_placeholders = _prepare_placeholders(placeholder_values)
+        @placeholders = @es_placeholders.merge(event_placeholders)
+      end
+
+      def _prepare_placeholders(placeholder_values)
         placeholders = {}
 
         placeholder_values.each do |key, value|
@@ -208,7 +244,7 @@ module Fluent
           end
         end
 
-        @placeholders = placeholders
+        placeholders
       end
 
       # Expand string with placeholders
