@@ -94,6 +94,18 @@ module Fluent
       log.error_backtrace
     end
 
+    class BrokenChunk < StandardError
+      attr_reader :event
+
+      def initialize(event, es = nil)
+        @event = event
+      end
+
+      def to_s
+        event.to_s
+      end
+    end
+
     private
 
     # message Entry {
@@ -141,9 +153,24 @@ module Fluent
         log.warn "Input chunk size is larger than 'chunk_size_warn_limit':", tag: tag, source: source, limit: @chunk_size_warn_limit, size: chunk_size
       end
 
+      broken_chunks = []
+
       if entries.class == String
         # PackedForward
         es = MessagePackEventStream.new(entries)
+        es.each do |time, record|
+          next unless broken_chunk?(tag, time, record)
+          broken_chunks << BrokenChunk.new([tag, time, record])
+        end
+        if !broken_chunks.empty?
+          # remove broken chunks
+          new_es = MultiEventStream.new
+          es.each do |time, record|
+            next if broken_chunk?(tag, time, record)
+            new_es.add(time, record)
+          end
+          es = new_es
+        end
         router.emit_stream(tag, es)
         option = msg[2]
 
@@ -155,6 +182,10 @@ module Fluent
           next if record.nil?
           time = e[0].to_i
           time = (now ||= Engine.now) if time == 0
+          if broken_chunk?(tag, time, record)
+            broken_chunks << BrokenChunk.new([tag, time, record])
+            next
+          end
           es.add(time, record)
         }
         router.emit_stream(tag, es)
@@ -166,12 +197,21 @@ module Fluent
         return if record.nil?
         time = msg[1]
         time = Engine.now if time == 0
-        router.emit(tag, time, record)
+
+        if broken_chunk?(tag, time, record)
+          broken_chunks << BrokenChunk.new([tag, time, record])
+        else
+          router.emit(tag, time, record)
+        end
         option = msg[3]
       end
 
       # return option for response
-      option
+      [option, broken_chunks]
+    end
+
+    def broken_chunk?(tag, time, record)
+      !tag.is_a?(String) or !time.is_a?(Numeric) or !record.is_a?(Hash)
     end
 
     class Handler < Coolio::Socket
@@ -212,8 +252,11 @@ module Fluent
           @serializer = :to_json.to_proc
           @y = Yajl::Parser.new
           @y.on_parse_complete = lambda { |obj|
-            option = @on_message.call(obj, @chunk_counter, @source)
+            option, broken_chunks = @on_message.call(obj, @chunk_counter, @source)
             respond option if option
+            if broken_chunks and !broken_chunks.empty?
+              @log.warn "broken chunk error, on_read_json #{data}, broken_chunks: [#{broken_chunks.map(&:to_s).join(',')}]"
+            end
             @chunk_counter = 0
           }
         else
@@ -240,8 +283,11 @@ module Fluent
       def on_read_msgpack(data)
         @chunk_counter += data.bytesize
         @u.feed_each(data) do |obj|
-          option = @on_message.call(obj, @chunk_counter, @source)
+          option, broken_chunks = @on_message.call(obj, @chunk_counter, @source)
           respond option if option
+          if broken_chunks and !broken_chunks.empty?
+            @log.warn "broken chunk error, on_read_msgpack #{data.unpack('H*')}, broken_chunks: [#{broken_chunks.map(&:to_s).join(',')}]"
+          end
           @chunk_counter = 0
         end
       rescue => e
